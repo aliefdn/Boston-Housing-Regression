@@ -1,0 +1,166 @@
+---
+title: "Boston Housing Price"
+author: "Alief Devara Nabil"
+date: "10/6/2021"
+output: html_document
+---
+
+
+```{r}
+#Load and read data
+
+library(readr)
+bostonhousing <- read_csv("F:/DIBIMBING/SCIRPT R/Day 21/bostonhousing.csv")
+View(bostonhousing)
+```
+
+```{r}
+#Split the data
+
+library(caTools)
+set.seed(123)
+sample <- sample.split(bostonhousing$medv, SplitRatio = .80)
+pre_train <- subset(bostonhousing, sample == TRUE)
+sample_train <- sample.split(pre_train$medv, SplitRatio = .80)
+
+train <- subset(pre_train, sample_train == TRUE)
+validation <- subset(pre_train, sample_train == FALSE)
+
+test <- subset(bostonhousing, sample == FALSE)
+
+nrow(train) #COL: 347
+nrow(validation) #COL: 87
+nrow(test) #COL: 72
+```
+
+```{r, fig.width = 20}
+#Correlation plot on training data
+
+library(psych)
+pairs.panels(train, 
+             method = "pearson", # correlation method
+             hist.col = "#00AFBB",
+             density = TRUE,  # show density plots
+             ellipses = TRUE # show correlation ellipses
+) # correlated features: rad, tax, medv 
+```
+
+Terdapat korelasi yang tinggi antar parameter rad dan tax sebesar 0.9. Maka, perlu dipilih salah satu parameter yang dipertahankan. Jika mengacu target var yaitu, medv, antara rad dan tax yang memiliki nilai abs corr lebih besar dengan medv adalah parameter tax. Dengan itu, parameter tax dipertahankan sedangkan rad akan di drop.
+
+```{r}
+#Exclude/drop multicollinear features
+
+library(dplyr)
+drop_cols <- c('rad')
+
+train <- train %>% select(-drop_cols)
+validation <- validation %>% select(-drop_cols)
+test <- test %>% select(-drop_cols)
+```
+
+```{r}
+#Model Matrix for Categorical Feature in training data
+
+x <- model.matrix(medv ~ ., train)[,-1]
+y <-  train$medv
+```
+
+```{r}
+#Fit Model on training data with Ridge
+
+library(glmnet)
+ridge_reg_pointzeroone <- glmnet(x, y, alpha = 0, lambda = 0.01)
+coef(ridge_reg_pointzeroone)
+
+ridge_reg_pointone <- glmnet(x, y, alpha = 0, lambda = 0.1)
+coef(ridge_reg_pointone)
+
+ridge_reg_one <- glmnet(x, y, alpha = 0, lambda = 1)
+coef(ridge_reg_pointone)
+
+ridge_reg_ten <- glmnet(x, y, alpha = 0, lambda = 10)
+coef(ridge_reg_ten)
+```
+
+```{r}
+#Choose the best lambda from the validation set
+
+x_validation <- model.matrix(medv ~., validation)[,-1]
+y_validation <- validation$medv
+
+RMSE_ridge_pointzeroone <- sqrt(mean((y_validation - predict(ridge_reg_pointzeroone, x_validation))^2))
+RMSE_ridge_pointzeroone #RMSE: 4.3464
+
+RMSE_ridge_pointone <- sqrt(mean((y_validation - predict(ridge_reg_pointone, x_validation))^2))
+RMSE_ridge_pointone  #RMSE: 4.349494
+
+RMSE_ridge_one <- sqrt(mean((y_validation - predict(ridge_reg_one, x_validation))^2))
+RMSE_ridge_one #RMSE: 4.422032
+
+RMSE_ridge_ten <- sqrt(mean((y_validation - predict(ridge_reg_ten, x_validation))^2))
+RMSE_ridge_ten #RMSE: 5.342122
+```
+
+Lambda sebesar 0.01 memiliki nilai RMSE terbaik sebesar 4.364 pada metode Ridge.
+
+```{r}
+#Fit Model on training data with Lasso
+
+lasso_reg_pointzeroone <- glmnet(x, y, alpha = 1, lambda = 0.01)
+coef(lasso_reg_pointzeroone) 
+
+lasso_reg_pointone <- glmnet(x, y, alpha = 1, lambda = 0.1)
+coef(lasso_reg_pointone) 
+
+lasso_reg_one <- glmnet(x, y, alpha = 1, lambda = 1)
+coef(lasso_reg_pointone)
+
+lasso_reg_ten <- glmnet(x, y, alpha = 1, lambda = 10)
+coef(lasso_reg_ten)
+```
+
+```{r}
+RMSE_lasso_pointzeroone <- sqrt(mean((y_validation - predict(lasso_reg_pointzeroone, x_validation))^2))
+RMSE_lasso_pointzeroone #RMSE: 4.340783
+
+RMSE_lasso_pointone <- sqrt(mean((y_validation - predict(lasso_reg_pointone, x_validation))^2))
+RMSE_lasso_pointone #RMSE: 4.352728
+
+RMSE_lasso_one <- sqrt(mean((y_validation - predict(lasso_reg_one, x_validation))^2))
+RMSE_lasso_one #RMSE: 4.937774
+
+RMSE_lasso_ten <- sqrt(mean((y_validation - predict(lasso_reg_ten, x_validation))^2))
+RMSE_lasso_ten #RMSE: 9.371755
+```
+
+Lambda sebesar 0.01 memiliki nilai RMSE terbaik sebesar 4.340783 pada metode Lasso.
+
+```{r}
+#Model Matrix for Categorical Feature in test data
+
+x_test <- model.matrix(medv ~., test)[,-1]
+y_test <- test$medv
+```
+
+Dalam tahap terakhir ini, saya memutuskan menggunakan metode Ridge karena metode ini cocok jika menggunakan banyak parameter seperti data bostonhousing.
+
+```{r}
+RMSE_ridge_best <- sqrt(mean((y_test - predict(ridge_reg_pointzeroone, x_test))^2))
+RMSE_ridge_best
+```
+
+Jika menggunakan metric RMSE, standard deaviation of prediction error adalah 6.82. Dimana dari garis regressi, resid nya menyimpang sebesar +/- 6.82.
+
+```{r}
+MAE_ridge_best <- mean(abs(y_test-predict(ridge_reg_pointzeroone, x_test)))
+MAE_ridge_best
+```
+
+Jika menggunakan metric MAE, rata ratanya prediksi menyimpang dari data asli medv sebesar 3.9.
+
+```{r}
+MAPE_ridge_best <- mean(abs((predict(ridge_reg_pointzeroone, x_test) - y_test))/y_test) 
+MAPE_ridge_best
+```
+
+Jika menggunakan metric MAPE, rata ratanya prediksi sebesar 17%. Dimana nilai persentase ini setara dengan 3.9
